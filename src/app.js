@@ -2,16 +2,16 @@ const express = require("express");
 
 const app = express();
 
-app.use("/", (req, res) => {
-  res.send("hello form the dashboard  !! ");
-});
-
 app.use("/test", (req, res) => {
   res.send("hello form the server !! ");
 });
 
-app.use("/hello", (req, res) => {
-  res.send("hello hello hello!! ");
+app.get("/user ", (req, res) => {
+  res.sent({
+    firstname: "nirmal ",
+    lastname: "kandel ",
+    status: "user info was sent ",
+  });
 });
 
 app.listen(7777, () => {
