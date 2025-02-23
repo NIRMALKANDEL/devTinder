@@ -4,80 +4,88 @@ const app = express();
 const { User } = require("./models/user");
 
 app.use(express.json());
-// this is the post api which push the signup data
-app.post("/signup", async (req, res) => {
-  // reading the request
 
-  //creating a new instance of the user model
+// Signup API - Create a new user
+app.post("/signup", async (req, res) => {
   const user = new User(req.body);
   try {
     await user.save();
-    res.send("user added succesfully in database!!");
+    res.send("User added successfully in database!!");
   } catch (err) {
-    res.status(401).send("user not added somethinf went wrong");
+    res
+      .status(400)
+      .send(`User not added, something went wrong: ${err.message}`);
   }
 });
 
-// finding one  user
+// Get a user by email
 app.get("/user", async (req, res) => {
   const userEmail = req.body.emailId;
   try {
     const users = await User.findOne({ emailId: userEmail });
     if (!users) {
-      res.status(404).send("something went wronmg!!");
+      res.status(404).send("User not found!!");
     } else {
       res.send(users);
     }
   } catch (err) {
-    res.status(404).send("something went wronmg!!");
+    res.status(404).send(`Something went wrong: ${err.message}`);
   }
 });
 
-// Freed API -  GET feed from the data of all the users in the database
+// Get all users (feed API)
 app.get("/feed", async (req, res) => {
   try {
     const users = await User.find({});
     res.send(users);
   } catch (err) {
-    res.status(404).send("something went wronmg!!");
+    res.status(404).send(`Something went wrong: ${err.message}`);
   }
 });
 
-// dedletr the user API
-
+// Delete a user by ID
 app.delete("/user", async (req, res) => {
   const userId = req.body.userId;
   try {
-    const user = await User.findByIdAndDelete(userId);
-    res.send("user deleted successfully");
+    await User.findByIdAndDelete(userId);
+    res.send("User deleted successfully");
   } catch (err) {
-    res.status(404).send("USeR not found  something went wrong");
+    res
+      .status(404)
+      .send(`User not found, something went wrong: ${err.message}`);
   }
 });
 
-// update the data of the user
-
+// Update a user by ID
 app.patch("/user", async (req, res) => {
   const userId = req.body.userId;
   const data = req.body;
   try {
-    const user = await User.findByIdAndUpdate(userId, data);
-    res.send("user Updated  successfully");
+    const user = await User.findByIdAndUpdate(userId, data, {
+      runValidators: true,
+      new: true,
+    });
+
+    if (!user) {
+      res.status(404).send("User not found");
+    } else {
+      res.send("User updated successfully");
+    }
   } catch (err) {
-    res.status(404).send("USeR not found  something went wrong");
+    res.status(400).send(`User update failed: ${err.message}`);
   }
 });
 
+// Connect to database and start server
 connectDB()
   .then(() => {
-    console.log("database connection established ");
-
+    console.log("Database connection established");
     app.listen(7777, () => {
-      console.log("server is succesfully listening in port 7777....");
+      console.log("Server is successfully listening on port 7777...");
     });
   })
   .catch((err) => {
-    console.error("database cannot be connected ");
+    console.error("Database connection failed: ", err.message);
   });
 
 // const { adminAuth, userAuth } = require("./middlewares/auth");
