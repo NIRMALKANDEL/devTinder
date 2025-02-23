@@ -8,6 +8,7 @@ app.use(express.json());
 // Signup API - Create a new user
 app.post("/signup", async (req, res) => {
   const user = new User(req.body);
+
   try {
     await user.save();
     res.send("User added successfully in database!!");
@@ -57,13 +58,36 @@ app.delete("/user", async (req, res) => {
 });
 
 // Update a user by ID
-app.patch("/user", async (req, res) => {
-  const userId = req.body.userId;
+app.patch("/user/:userId", async (req, res) => {
+  const userId = req.params?.userId;
   const data = req.body;
+
   try {
+    const allowedUpdates = [
+      "firstName",
+      "lastName",
+      "password",
+      "skills",
+      "photoURL",
+      "age",
+      "gender",
+      "about",
+    ];
+    const isUpdateAllowed = Object.keys(data).every((key) =>
+      allowedUpdates.includes(key)
+    );
+
+    if (!isUpdateAllowed) {
+      return res.status(400).send("Update contains invalid fields");
+    }
+
+    if (data?.skills.length > 10) {
+      throw new Error("skills cannot be more than 10");
+    }
     const user = await User.findByIdAndUpdate(userId, data, {
       runValidators: true,
       new: true,
+      context: "query",
     });
 
     if (!user) {
