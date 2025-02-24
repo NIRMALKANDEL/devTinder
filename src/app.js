@@ -2,20 +2,54 @@ const express = require("express");
 const { connectDB } = require("./config/Database");
 const app = express();
 const { User } = require("./models/user");
+const { validateSignUpData } = require("./utils/validation");
+const bcrypt = require("bcryptjs");
 
 app.use(express.json());
 
 // Signup API - Create a new user
 app.post("/signup", async (req, res) => {
-  const user = new User(req.body);
-
   try {
+    // validating  the data
+    validateSignUpData(req);
+
+    //encrypt the password
+    const { password, emailId, firstName, lastName } = req.body;
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    console.log(passwordHash);
+    // creating the  user
+    const user = new User({
+      firstName,
+      lastName,
+      emailId,
+      password: passwordHash,
+    });
+
     await user.save();
     res.send("User added successfully in database!!");
   } catch (err) {
-    res
-      .status(400)
-      .send(`User not added, something went wrong: ${err.message}`);
+    res.status(400).send(`ERROR:= ${err.message}`);
+  }
+});
+
+//login post
+app.post("/login", async (req, res) => {
+  try {
+    const { emailId, password } = req.body;
+
+    const user = await User.findOne({ emailId: emailId });
+    if (!user) {
+      throw new Error(" invalid cridentails");
+    }
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (isPasswordValid) {
+      res.send("Login Successfull");
+    } else {
+      throw new Error("invaild cridential");
+    }
+  } catch (err) {
+    res.status(400).send(`ERROR:= ${err.message}`);
   }
 });
 
@@ -81,7 +115,7 @@ app.patch("/user/:userId", async (req, res) => {
       return res.status(400).send("Update contains invalid fields");
     }
 
-    if (data?.skills.length > 10) {
+    if (data.skills && data?.skills.length > 10) {
       throw new Error("skills cannot be more than 10");
     }
     const user = await User.findByIdAndUpdate(userId, data, {
@@ -111,45 +145,3 @@ connectDB()
   .catch((err) => {
     console.error("Database connection failed: ", err.message);
   });
-
-// const { adminAuth, userAuth } = require("./middlewares/auth");
-// const { error } = require("console");
-// app.use("/admin", adminAuth);
-
-// app.get("/user", (req, res) => {
-//   throw new Error("dwdefref");
-//   res.send("user data sent.. ");
-// });
-
-// app.use("/", (err, req, res, next) => {
-//   if (err) {
-//     res.status(500).send("something went wrong !!");
-//   }
-// });
-
-// // app.post("/user/login", (req, res) => {
-// //   res.send("user login sucessfully ");
-// // });
-
-// // app.get("/User", userAuth, (req, res) => {
-// //   res.send("user data sent .....");
-// // });
-
-// // app.get("/admin/getAllData", (req, res) => {
-// //   // const token = "xyzdcd";
-// //   // const isAdminAuthorised = token === "xyz";
-
-// //   res.send("all data send");
-// // });
-// // app.get("/admin/deleteUser", (req, res) => {
-// //   res.send("deletred user by admin ");
-// // });
-
-// // // app.get("/user", (req, res) => {
-// // //   console.log(req.query);
-// // //   res.send({
-// // //     firstname: "nirmal ",
-// // //     lastname: "kandel ",
-// // //     status: "user info was sent ",
-// // //   });
-// // // });
