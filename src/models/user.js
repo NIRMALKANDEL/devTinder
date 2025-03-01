@@ -51,9 +51,9 @@ const userSchema = new mongoose.Schema(
     age: { type: Number, min: 18 },
     gender: {
       type: String,
-      validate: {
-        validator: (value) => ["male", "female", "others"].includes(value),
-        message: "Gender must be 'male', 'female', or 'others'.",
+      enum: {
+        values: ["male", "female", "others"],
+        message: `{VALUE}Gender must be 'male', 'female', or 'others'`,
       },
     },
     photoURL: {

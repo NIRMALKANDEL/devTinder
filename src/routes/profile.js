@@ -33,4 +33,36 @@ profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
   }
 });
 
+// EDIT _PASSWARD API
+profileRouter.put("/profile/password", userAuth, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const user = req.user;
+
+    // Check if old password matches
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Old password is incorrect" });
+    }
+
+    // Validate new password using validator
+    if (!validator.isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        error:
+          "Password must be at least 8 characters long, include 1 uppercase letter, 1 number, and 1 special character.",
+      });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    // Save updated user data
+    await user.save();
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = profileRouter;
