@@ -43,13 +43,13 @@ authRouter.post("/login", async (req, res) => {
       // Set JWT and cookies
 
       const token = await user.getJWT();
-      console.log(token);
+      // console.log(token);
 
       res.cookie("token", token, {
         expires: new Date(Date.now() + 900000),
         httpOnly: true,
       });
-      res.send("Login Successful");
+      res.send(user);
     } else {
       throw new Error("Invalid credentials");
     }
