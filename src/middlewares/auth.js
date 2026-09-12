@@ -11,7 +11,7 @@ const userAuth = async (req, res, next) => {
       return res.status(401).send("you are not logged in please loging first");
     }
     // validate the token
-    const decodedObj = await jwt.verify(token, "@devTinder001");
+    const decodedObj = await jwt.verify(token, process.env.JWT_SECRET);
     // and find the user and the availability
     const { _id } = decodedObj;
     const user = await User.findById(_id);

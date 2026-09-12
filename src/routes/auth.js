@@ -22,7 +22,17 @@ authRouter.post("/signup", async (req, res) => {
     });
 
     await user.save();
-    res.send("User added successfully in database!!");
+
+    const token = await user.getJWT();
+    res.cookie("token", token, {
+      expires: new Date(Date.now() + 900000),
+      httpOnly: true,
+    });
+
+    res.status(201).json({
+      message: "User added successfully in database!!",
+      data: user,
+    });
   } catch (err) {
     res.status(400).send(`ERROR:= ${err.message}`);
   }
@@ -49,7 +59,7 @@ authRouter.post("/login", async (req, res) => {
         expires: new Date(Date.now() + 900000),
         httpOnly: true,
       });
-      res.send(user);
+      res.json({ payload: user });
     } else {
       throw new Error("Invalid credentials");
     }
