@@ -87,6 +87,13 @@ const userSchema = new mongoose.Schema(
         message: "Invalid portfolio URL.",
       },
     },
+    // Added: email verification. Users created before this feature have no
+    // value here and are treated as verified.
+    isEmailVerified: { type: Boolean },
+    emailVerificationToken: { type: String, select: false },
+    // Added: forgot / reset password
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
   },
   {
     timestamps: true,

@@ -5,6 +5,9 @@ authRouter
 - POST / signup
 - POST /Login
 - POST /logout
+- GET /verify-email/:token
+- POST /forgot-password
+- POST /reset-password/:token
 
 profileRouter
 

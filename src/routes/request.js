@@ -3,6 +3,7 @@ const requestRouter = express.Router();
 const { userAuth } = require("../middlewares/auth");
 const { connectionRequest } = require("../models/connectionRequest");
 const { User } = require("../models/user");
+const sendEmail = require("../utils/sendEmail");
 
 // Send Connection Request
 requestRouter.post(
@@ -51,6 +52,11 @@ requestRouter.post(
 
       const savedRequest = await newRequest.save();
 
+      // Notify the recipient
+      if (status === "interested") {
+        await sendEmail.sendConnectionRequestEmail(toUser, req.user);
+      }
+
       res.status(201).json({
         message: `${req.user.firstName} ${status} ${toUser.firstName}`,
         data: savedRequest,
@@ -90,6 +96,14 @@ requestRouter.post(
 
       request.status = status;
       const updatedRequest = await request.save();
+
+      // Let the sender know their request was accepted
+      if (status === "accepted") {
+        const fromUser = await User.findById(request.fromUserId);
+        if (fromUser) {
+          await sendEmail.sendRequestAcceptedEmail(fromUser, loggedInUser);
+        }
+      }
 
       res.json({
         message: `Connection request ${status}`,

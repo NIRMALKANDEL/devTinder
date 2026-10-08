@@ -1,7 +1,7 @@
 const validator = require("validator");
 
 const validateSignUpData = (req) => {
-  const { firstName, lastName, emailId, password } = req.body;
+  const { firstName, lastName, emailId, password, confirmPassword } = req.body;
 
   if (!firstName || !lastName) {
     throw new Error("Name doesn't exist");
@@ -11,8 +11,19 @@ const validateSignUpData = (req) => {
     throw new Error("Invalid email address");
   }
 
-  if (!validator.isStrongPassword(password)) {
-    throw new Error("Please use a strong password");
+  validatePasswordData(password, confirmPassword);
+};
+
+// Added: shared by signup and reset password
+const validatePasswordData = (password, confirmPassword) => {
+  if (!password || !validator.isStrongPassword(password)) {
+    throw new Error(
+      "Password must be at least 8 characters, include 1 uppercase letter, 1 number, and 1 special character."
+    );
+  }
+
+  if (password !== confirmPassword) {
+    throw new Error("Passwords do not match");
   }
 };
 
@@ -34,4 +45,8 @@ const validateEditProfileData = (req) => {
   return isEditAllowed;
 };
 
-module.exports = { validateSignUpData, validateEditProfileData };
+module.exports = {
+  validateSignUpData,
+  validateEditProfileData,
+  validatePasswordData,
+};
