@@ -71,9 +71,20 @@ const userSchema = new mongoose.Schema(
     },
     skills: {
       type: [String],
+      // Changed: enforce the Top 5 Skills limit at the schema level
       validate: {
-        validator: (value) => value.length <= 10,
-        message: "Skills cannot be more than 10.",
+        validator: (value) => value.length <= 5,
+        message: "Skills cannot be more than 5.",
+      },
+    },
+    // Added: optional portfolio website URL
+    portfolioUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      validate: {
+        validator: (value) => value === "" || validator.isURL(value),
+        message: "Invalid portfolio URL.",
       },
     },
   },

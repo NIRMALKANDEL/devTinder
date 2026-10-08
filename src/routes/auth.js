@@ -24,8 +24,9 @@ authRouter.post("/signup", async (req, res) => {
     await user.save();
 
     const token = await user.getJWT();
+    // Changed: cookie now lasts 1 day to match the JWT so refresh keeps the user logged in
     res.cookie("token", token, {
-      expires: new Date(Date.now() + 900000),
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       httpOnly: true,
     });
 
@@ -55,8 +56,9 @@ authRouter.post("/login", async (req, res) => {
       const token = await user.getJWT();
       // console.log(token);
 
+      // Changed: cookie now lasts 1 day to match the JWT so refresh keeps the user logged in
       res.cookie("token", token, {
-        expires: new Date(Date.now() + 900000),
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
         httpOnly: true,
       });
       res.json({ payload: user });

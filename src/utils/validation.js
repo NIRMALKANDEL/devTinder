@@ -26,6 +26,7 @@ const validateEditProfileData = (req) => {
     "about",
     "age",
     "skills",
+    "portfolioUrl", // Added: allow editing the portfolio website URL
   ];
   const isEditAllowed = Object.keys(req.body).every((field) =>
     allowedEditFields.includes(field)
