@@ -7,7 +7,7 @@ Frontend repo: [NIRMALKANDEL/devTinder-web](https://github.com/NIRMALKANDEL/devT
 ## Features
 
 - **Sign up / Login / Logout** with JWT stored in an httpOnly cookie
-- **Email verification** — signup sends a welcome email with a verification link; login is blocked until the email is verified (a fresh link is sent if they try)
+- **Email verification** — signup sends a welcome email with a verification link; clicking it verifies the email and logs the user in. Login is blocked until the email is verified (a fresh link is sent if they try)
 - **Retype password** check on signup and on password reset
 - **Forgot / reset password** — emails a one-time reset link valid for 15 minutes
 - **Emails** (AWS SES) — welcome + verify, password reset, "someone is interested in you", "your request was accepted"
@@ -48,7 +48,7 @@ src/
 | Method | Route | Auth | Description |
 | --- | --- | --- | --- |
 | POST | `/signup` | – | Create account (`firstName, lastName, emailId, password, confirmPassword`), sends welcome + verify email |
-| GET | `/verify-email/:token` | – | Verifies the email, redirects to `FRONTEND_URL/login?verified=true\|false` |
+| GET | `/verify-email/:token` | – | Verifies the email, logs the user in (sets the cookie) and redirects to `FRONTEND_URL/profile`; invalid/used link → `/login?verified=false` |\|false` |
 | POST | `/login` | – | Login (`emailId, password`); blocked until email is verified |
 | POST | `/logout` | – | Clears the cookie |
 | POST | `/forgot-password` | – | Emails a reset link (`emailId`); same reply whether or not the email exists |

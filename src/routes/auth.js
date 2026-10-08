@@ -50,22 +50,40 @@ authRouter.post("/signup", async (req, res) => {
         "Registered successfully! Please check your email to verify your account.",
     });
   } catch (err) {
-    res.status(400).send(`ERROR:= ${err.message}`);
+    // Changed: short, readable messages instead of the raw MongoDB error
+    let message = err.message;
+    if (err.code === 11000) {
+      message = "An account with this email already exists. Please login.";
+    } else if (err.name === "ValidationError") {
+      message = Object.values(err.errors)
+        .map((e) => e.message)
+        .join(" ");
+    }
+    res.status(400).send(`ERROR:= ${message}`);
   }
 });
 
-// Added: email verification link (opened from the welcome email)
+// Added: email verification link (opened from the welcome email).
+// Verifying also logs the user in and opens their profile.
 authRouter.get("/verify-email/:token", async (req, res) => {
   try {
-    const result = await User.updateOne(
+    const user = await User.findOneAndUpdate(
       { emailVerificationToken: hashToken(req.params.token) },
       {
         $set: { isEmailVerified: true },
         $unset: { emailVerificationToken: 1 },
       }
     );
-    const verified = result.modifiedCount === 1;
-    res.redirect(`${FRONTEND_URL}/login?verified=${verified}`);
+    if (!user) {
+      return res.redirect(`${FRONTEND_URL}/login?verified=false`);
+    }
+
+    const token = await user.getJWT();
+    res.cookie("token", token, {
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      httpOnly: true,
+    });
+    res.redirect(`${FRONTEND_URL}/profile`);
   } catch (err) {
     res.redirect(`${FRONTEND_URL}/login?verified=false`);
   }
