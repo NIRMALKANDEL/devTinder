@@ -4,9 +4,9 @@ const { connectionRequest } = require("../models/connectionRequest");
 const { User } = require("../models/user");
 const userRouter = express.Router();
 
-// Added: include portfolioUrl so feed/connection cards can show the portfolio link
+// Added: include portfolioUrl / githubUrl so feed/connection cards can show the links
 const USER_SAFE_DATA =
-  "firstName lastName age photoURL gender about skills portfolioUrl";
+  "firstName lastName age photoURL gender about skills portfolioUrl githubUrl";
 // Get all pending connection requests for the user
 userRouter.get("/user/requests/received", userAuth, async (req, res) => {
   try {

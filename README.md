@@ -11,7 +11,7 @@ Frontend repo: [NIRMALKANDEL/devTinder-web](https://github.com/NIRMALKANDEL/devT
 - **Retype password** check on signup and on password reset
 - **Forgot / reset password** — emails a one-time reset link valid for 15 minutes
 - **Emails** (AWS SES) — welcome + verify, password reset, "someone is interested in you", "your request was accepted"
-- **Profile** view / edit (skills, portfolio URL, photo, about…)
+- **Profile** view / edit (skills, portfolio URL, GitHub URL, photo, about…). `githubUrl` is optional and must be a github.com link
 - **Feed** of developers you haven't interacted with yet
 - **Connection requests** — send (ignored / interested) and review (accepted / rejected)
 
@@ -54,7 +54,7 @@ src/
 | POST | `/forgot-password` | – | Emails a reset link (`emailId`); same reply whether or not the email exists |
 | POST | `/reset-password/:token` | – | Set a new password (`password, confirmPassword`) |
 | GET | `/profile/view` | ✔ | Logged-in user's profile |
-| PATCH | `/profile/edit` | ✔ | Edit profile fields |
+| PATCH | `/profile/edit` | ✔ | Edit profile fields (`firstName`, `lastName`, `age`, `gender`, `photoURL`, `about`, `skills`, `portfolioUrl`, `githubUrl`) |
 | POST | `/request/send/:status/:toUserId` | ✔ | `status` = `ignored` \| `interested` (interested emails the other user) |
 | POST | `/request/review/:status/:requestId` | ✔ | `status` = `accepted` \| `rejected` (accepted emails the sender) |
 | GET | `/user/requests/received` | ✔ | Pending requests sent to you |

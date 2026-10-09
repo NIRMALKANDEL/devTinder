@@ -42,6 +42,7 @@ profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
       "about",
       "skills",
       "portfolioUrl", // Added: persist the portfolio website URL
+      "githubUrl", // Added: persist the GitHub profile URL
     ];
 
     allowedUpdates.forEach((key) => {

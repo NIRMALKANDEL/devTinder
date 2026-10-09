@@ -87,6 +87,18 @@ const userSchema = new mongoose.Schema(
         message: "Invalid portfolio URL.",
       },
     },
+    // Added: optional GitHub profile URL (must point to github.com)
+    githubUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      validate: {
+        validator: (value) =>
+          value === "" ||
+          (validator.isURL(value) && /(^|\/\/|\.)github\.com(\/|$)/i.test(value)),
+        message: "Invalid GitHub URL. Use a github.com link.",
+      },
+    },
     // Added: email verification. Users created before this feature have no
     // value here and are treated as verified.
     isEmailVerified: { type: Boolean },
