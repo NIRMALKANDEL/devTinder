@@ -109,6 +109,19 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    // Fixed: never send the password hash or auth tokens to the client.
+    // /login, /profile/view and /profile/edit return the user document directly,
+    // so this strips the secrets from every JSON response in one place.
+    toJSON: {
+      transform: (doc, ret) => {
+        delete ret.password;
+        delete ret.emailVerificationToken;
+        delete ret.passwordResetToken;
+        delete ret.passwordResetExpires;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
