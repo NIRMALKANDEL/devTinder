@@ -1,5 +1,7 @@
 const { SendEmailCommand } = require("@aws-sdk/client-ses");
 const { sesClient } = require("./sesClient");
+const { createEmailQueue } = require("./emailQueue");
+const { render, fullName } = require("./emailTemplates");
 
 const createSendEmailCommand = (toAddress, fromAddress, subject, htmlBody, textBody) => {
   return new SendEmailCommand({
@@ -25,100 +27,112 @@ const createSendEmailCommand = (toAddress, fromAddress, subject, htmlBody, textB
     },
     Source: fromAddress,
     ReplyToAddresses: [],
+    // Optional: lets SES publish bounce/complaint/delivery events for this email
+    ...(process.env.SES_CONFIGURATION_SET && {
+      ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
+    }),
   });
 };
 
-// Sends an email via AWS SES. The sender must be a verified SES identity
-// (and, while in the SES sandbox, the recipient must be verified too).
+// Sends one email via AWS SES right now. Throws on any SES error so the queue
+// can decide whether to retry. Prefer the queued helpers below.
+// If EMAIL_DEMO_RECIPIENT is set, every email goes there instead of the real user.
 const run = async ({ toAddress, subject, htmlBody, textBody }) => {
   const sendEmailCommand = createSendEmailCommand(
-    toAddress,
+    process.env.EMAIL_DEMO_RECIPIENT || toAddress,
     process.env.SES_FROM_EMAIL,
     subject,
     htmlBody,
     textBody || htmlBody.replace(/<[^>]*>/g, "")
   );
-
-  try {
-    return await sesClient.send(sendEmailCommand);
-  } catch (caught) {
-    if (caught instanceof Error && caught.name === "MessageRejected") {
-      return caught;
-    }
-    throw caught;
-  }
+  return sesClient.send(sendEmailCommand);
 };
 
-// Names come from user input, so escape them before putting them in HTML
-const escapeHtml = (str = "") =>
-  String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+const envInt = (name, fallback) => {
+  const value = parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
 
-const fullName = (user) => `${user.firstName} ${user.lastName || ""}`.trim();
+// One queue per process. Keep EMAIL_MAX_SEND_RATE at or below the SES MaxSendRate
+// (14/sec on this account), divided by the number of app instances.
+const emailQueue = createEmailQueue({
+  send: run,
+  maxSendRate: envInt("EMAIL_MAX_SEND_RATE", 10),
+  concurrency: envInt("EMAIL_CONCURRENCY", 5),
+  maxAttempts: envInt("EMAIL_MAX_ATTEMPTS", 4),
+});
 
-// Never throws: an email failure shouldn't fail the API request.
-// If EMAIL_DEMO_RECIPIENT is set, every email goes there instead of the real user.
-const safeSend = async (options) => {
-  const toAddress = process.env.EMAIL_DEMO_RECIPIENT || options.toAddress;
-  if (!toAddress) return;
+// Renders a template and queues it. Returns immediately and never throws:
+// an email failure shouldn't fail the API request.
+const queueTemplate = (toAddress, templateName, data, dedupeKey, windowMs) => {
   try {
-    const result = await run({ ...options, toAddress });
-    if (result instanceof Error) {
-      console.error("Email rejected by SES:", result.message);
-    }
-    return result;
+    const { subject, htmlBody } = render(templateName, data);
+    return emailQueue.enqueue({ toAddress, subject, htmlBody, dedupeKey, windowMs });
   } catch (err) {
-    console.error("Error sending email:", err.message);
+    console.error(`[email] could not queue ${templateName}:`, err.message);
+    return { queued: false, reason: "error" };
   }
 };
+
+// Verification / reset emails can be re-requested once a minute: long enough to
+// stop inbox flooding, short enough not to block a user who really needs a new link
+const RESEND_COOLDOWN_MS = 60 * 1000;
 
 const sendConnectionRequestEmail = (toUser, fromUser) =>
-  safeSend({
-    toAddress: toUser.emailId,
-    subject: `${fromUser.firstName} is interested in connecting on DevTinder`,
-    htmlBody: `<h1>Hi ${escapeHtml(toUser.firstName)},</h1><p>${escapeHtml(fullName(fromUser))} sent you a connection request on DevTinder. Log in to accept or reject it.</p>`,
-  });
+  queueTemplate(
+    toUser.emailId,
+    "connectionRequest",
+    { toUser, fromUser },
+    `connectionRequest:${fromUser._id}:${toUser._id}`
+  );
 
 const sendRequestAcceptedEmail = (toUser, acceptedBy) =>
-  safeSend({
-    toAddress: toUser.emailId,
-    subject: `${acceptedBy.firstName} accepted your connection request on DevTinder`,
-    htmlBody: `<h1>Hi ${escapeHtml(toUser.firstName)},</h1><p>${escapeHtml(fullName(acceptedBy))} accepted your connection request. You're now connected on DevTinder!</p>`,
-  });
+  queueTemplate(
+    toUser.emailId,
+    "requestAccepted",
+    { toUser, acceptedBy },
+    `requestAccepted:${acceptedBy._id}:${toUser._id}`
+  );
 
 // Sent right after signup: welcome message + email verification link
 const sendWelcomeEmail = (user, verifyUrl) =>
-  safeSend({
-    toAddress: user.emailId,
-    subject: "Welcome to DevTinder! Please verify your email",
-    htmlBody: `<h1>Hi ${escapeHtml(user.firstName)}, welcome to DevTinder!</h1>
-<p>You have successfully registered on DevTinder, the place where developers meet, connect and build together.</p>
-<p>Find developers who share your skills, send connection requests to people you'd love to code with, and grow your network one match at a time.</p>
-<p>Please verify your email to activate your account:</p>
-<p><a href="${verifyUrl}">Verify my email</a></p>
-<p>If the button doesn't work, copy this link into your browser:<br>${verifyUrl}</p>
-<p>Happy coding,<br>The DevTinder Team</p>`,
-  });
+  queueTemplate(user.emailId, "welcome", { user, verifyUrl }, `welcome:${user._id}`, RESEND_COOLDOWN_MS);
 
 const sendPasswordResetEmail = (user, resetUrl) =>
-  safeSend({
-    toAddress: user.emailId,
-    subject: "Reset your DevTinder password",
-    htmlBody: `<h1>Hi ${escapeHtml(user.firstName)},</h1>
-<p>We received a request to reset your DevTinder password. This link is valid for 15 minutes:</p>
-<p><a href="${resetUrl}">Reset my password</a></p>
-<p>If the button doesn't work, copy this link into your browser:<br>${resetUrl}</p>
-<p>If you didn't ask for this, you can ignore this email. Your password won't change.</p>`,
-  });
+  queueTemplate(user.emailId, "passwordReset", { user, resetUrl }, `passwordReset:${user._id}`, RESEND_COOLDOWN_MS);
+
+// Bulk: queue one digest per user. `digests` is [{ toUser, senderNames }].
+// dayKey makes re-running the job on the same day a no-op.
+const sendPendingRequestsDigests = (digests, dayKey) =>
+  digests.map(({ toUser, senderNames }) =>
+    queueTemplate(
+      toUser.emailId,
+      "pendingRequestsDigest",
+      { toUser, senderNames },
+      `digest:${toUser._id}:${dayKey}`
+    )
+  );
+
+// Reserve the right to send the welcome / reset email for this user. Returns
+// false if one went out in the last minute. Call it before rotating the
+// token, so a double-submitted form can't rotate it twice and break the link.
+const claimWelcomeEmail = (user) => emailQueue.claim(`welcome:${user._id}`, RESEND_COOLDOWN_MS);
+const claimPasswordResetEmail = (user) =>
+  emailQueue.claim(`passwordReset:${user._id}`, RESEND_COOLDOWN_MS);
+const releaseWelcomeEmail = (user) => emailQueue.release(`welcome:${user._id}`);
+const releasePasswordResetEmail = (user) => emailQueue.release(`passwordReset:${user._id}`);
 
 module.exports = {
   run,
+  emailQueue,
+  fullName,
+  claimWelcomeEmail,
+  claimPasswordResetEmail,
+  releaseWelcomeEmail,
+  releasePasswordResetEmail,
   sendConnectionRequestEmail,
   sendRequestAcceptedEmail,
   sendWelcomeEmail,
   sendPasswordResetEmail,
+  sendPendingRequestsDigests,
 };

@@ -43,7 +43,7 @@ authRouter.post("/signup", async (req, res) => {
     await user.save();
 
     // Changed: no auto-login; the user must verify their email first
-    await sendEmail.sendWelcomeEmail(user, verifyUrlFor(token));
+    sendEmail.sendWelcomeEmail(user, verifyUrlFor(token));
 
     res.status(201).json({
       message:
@@ -95,18 +95,25 @@ authRouter.post("/forgot-password", async (req, res) => {
     const emailId = String(req.body.emailId || "").toLowerCase().trim();
     const user = await User.findOne({ emailId });
 
-    if (user) {
+    // Skip if a reset email went out in the last minute: stops email
+    // bombing, and keeps the link already sent valid
+    if (user && sendEmail.claimPasswordResetEmail(user)) {
       const { token, tokenHash } = createToken();
-      await User.updateOne(
-        { _id: user._id },
-        {
-          $set: {
-            passwordResetToken: tokenHash,
-            passwordResetExpires: new Date(Date.now() + 15 * 60 * 1000),
-          },
-        }
-      );
-      await sendEmail.sendPasswordResetEmail(
+      try {
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              passwordResetToken: tokenHash,
+              passwordResetExpires: new Date(Date.now() + 15 * 60 * 1000),
+            },
+          }
+        );
+      } catch (err) {
+        sendEmail.releasePasswordResetEmail(user);
+        throw err;
+      }
+      sendEmail.sendPasswordResetEmail(
         user,
         `${FRONTEND_URL}/reset-password/${token}`
       );
@@ -169,12 +176,20 @@ authRouter.post("/login", async (req, res) => {
     const isPasswordValid = await user.validatePassword(password);
     // Added: block login until the email is verified, and send a fresh link
     if (isPasswordValid && user.isEmailVerified === false) {
-      const { token, tokenHash } = createToken();
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { emailVerificationToken: tokenHash } }
-      );
-      await sendEmail.sendWelcomeEmail(user, verifyUrlFor(token));
+      // At most one new link per minute, so the earlier link stays valid
+      if (sendEmail.claimWelcomeEmail(user)) {
+        const { token, tokenHash } = createToken();
+        try {
+          await User.updateOne(
+            { _id: user._id },
+            { $set: { emailVerificationToken: tokenHash } }
+          );
+        } catch (err) {
+          sendEmail.releaseWelcomeEmail(user);
+          throw err;
+        }
+        sendEmail.sendWelcomeEmail(user, verifyUrlFor(token));
+      }
       throw new Error(
         "Please verify your email first. We've sent you a new verification link."
       );

@@ -52,9 +52,9 @@ requestRouter.post(
 
       const savedRequest = await newRequest.save();
 
-      // Notify the recipient
+      // Notify the recipient in the background; never fails the request
       if (status === "interested") {
-        await sendEmail.sendConnectionRequestEmail(toUser, req.user);
+        sendEmail.sendConnectionRequestEmail(toUser, req.user);
       }
 
       res.status(201).json({
@@ -97,11 +97,11 @@ requestRouter.post(
       request.status = status;
       const updatedRequest = await request.save();
 
-      // Let the sender know their request was accepted
+      // Let the sender know their request was accepted (in the background)
       if (status === "accepted") {
         const fromUser = await User.findById(request.fromUserId);
         if (fromUser) {
-          await sendEmail.sendRequestAcceptedEmail(fromUser, loggedInUser);
+          sendEmail.sendRequestAcceptedEmail(fromUser, loggedInUser);
         }
       }
 
