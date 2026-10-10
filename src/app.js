@@ -11,7 +11,7 @@ const { emailQueue } = require("./utils/sendEmail");
 if (process.env.ENABLE_CRON !== "false") {
   require("./utils/cronjob");
 }
-app.use(express.json());
+app.use(express.json({ limit: "1mb" })); // Changed: room for an uploaded profile photo
 app.use(cookieParser());
 app.use(
   cors({

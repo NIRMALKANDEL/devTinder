@@ -60,9 +60,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       default:
         "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0rz7SHvHoyn3LwaQ6Zc8LkQEmi-ClP8mvZg&s",
+      // Changed: optional; either an image address or a photo uploaded from the
+      // device (stored as a small base64 image, max ~700 KB)
       validate: {
-        validator: validator.isURL,
-        message: "Invalid photo URL.",
+        validator: (value) =>
+          value === "" ||
+          validator.isURL(value) ||
+          (value.length <= 1000000 &&
+            /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)),
+        message: "Photo must be an image address or an uploaded JPG, PNG, WEBP or GIF under 700 KB.",
       },
     },
     about: {
