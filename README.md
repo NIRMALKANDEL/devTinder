@@ -13,7 +13,13 @@ Frontend repo: [NIRMALKANDEL/devTinder-web](https://github.com/NIRMALKANDEL/devT
 - **Emails** (AWS SES) — welcome + verify, password reset, "someone is interested in you", "your request was accepted"
 - **Profile** view / edit (skills, portfolio URL, GitHub URL, photo, about…). `githubUrl` is optional and must be a github.com link
 - **Feed** of developers you haven't interacted with yet
-- **Connection requests** — send (ignored / interested) and review (accepted / rejected)
+- **Connection requests** — send (ignored / interested) and review (accepted / rejected). One active request per pair of users, enforced by a unique index
+- **Real-time chat** (Socket.IO) between connections, with typing indicator and paged history
+- **Block / unblock and report** users (reports can be emailed to the admin)
+- **Delete account** (password required) — removes the user's requests, chats, messages and reports
+- **Feed skill filter** — `GET /feed?skills=react,node` (case-insensitive)
+- **Security** — rate limits on login (per IP and per account), signup and forgot-password; helmet headers; `secure` + `SameSite=Lax` cookie; changing or resetting the password logs out every other session
+- **Background email queue** — emails never slow down API requests; retries, rate cap and duplicate protection
 
 ## Tech Stack
 
@@ -59,7 +65,19 @@ src/
 | POST | `/request/review/:status/:requestId` | ✔ | `status` = `accepted` \| `rejected` (accepted emails the sender) |
 | GET | `/user/requests/received` | ✔ | Pending requests sent to you |
 | GET | `/user/connections` | ✔ | Your connections |
-| GET | `/feed` | ✔ | Profiles to swipe on |
+| GET | `/feed` | ✔ | Profiles to swipe on (`?skills=a,b` to filter) |
+| PUT | `/profile/password` | ✔ | Change password (`oldPassword, newPassword`); logs out other sessions |
+| DELETE | `/profile` | ✔ | Delete account (`password`) |
+| POST / DELETE | `/user/block/:userId` | ✔ | Block / unblock a user |
+| GET | `/user/blocked` | ✔ | Users you blocked |
+| POST | `/user/report/:userId` | ✔ | Report (`reason`: spam, harassment, fake_profile, inappropriate_content, other; optional `details`, `block`) |
+| GET | `/chats` | ✔ | Your conversations, newest first |
+| GET | `/chat/:userId` | ✔ | Messages with a connection (`?before=<messageId>` for older) |
+| GET | `/health` | – | `{ status: "ok" }` when the API and database are up (for uptime monitors) |
+
+**Socket.IO** (path `/socket.io`, through nginx at `/api/socket.io`, authenticated by the login cookie): emit `sendMessage {toUserId, text}` (with ack), `typing {toUserId}`; listen for `messageReceived`, `typing`.
+
+All errors are JSON: `{ "message": "..." }`. Auth failures are `401`.
 
 > Users created before email verification existed have no `isEmailVerified` value and are treated as verified, so they can still log in.
 
@@ -83,6 +101,13 @@ FRONTEND_URL=http://localhost:5173   # production: https://www.projectdev.in
 
 # Optional, for testing only: send EVERY email to this one address
 # EMAIL_DEMO_RECIPIENT=you@example.com
+
+# Proxies in front of the API. nginx = 1 (Cloudflare adds the visitor IP header itself).
+# Wrong value = all users share one rate-limit bucket, or IPs can be spoofed.
+TRUST_PROXY=1
+CORS_ORIGINS=http://localhost:5173   # comma-separated
+REPORTS_EMAIL=                       # optional: where user reports are emailed
+ENABLE_CRON=true                     # false on dev machines that use the production DB
 ```
 
 ## Getting Started (local)
@@ -94,6 +119,10 @@ npm install
 # create .env as above
 npm run dev        # nodemon, http://localhost:7777
 ```
+
+**Without touching production data:** `npm run dev:memory` starts the API on a throwaway in-memory MongoDB with demo users (login `aarav@example.com` / `Dev@12345`) and logs emails instead of sending them.
+
+**Tests:** `npm test` runs the Jest + Supertest API tests (in-memory MongoDB, no real email).
 
 Run the [frontend](https://github.com/NIRMALKANDEL/devTinder-web) with `npm run dev` (http://localhost:5173) — its Vite proxy forwards `/api/*` to this backend.
 
@@ -177,6 +206,27 @@ pm2 logs <name-or-id> --lines 30
 **EC2 public IP → Atlas:** the EC2 instance's IP must also be in MongoDB Atlas → *Network Access*. Use an **Elastic IP** so it doesn't change on reboot.
 
 Then deploy the frontend — see the [frontend README](https://github.com/NIRMALKANDEL/devTinder-web#deploying-an-update).
+
+### This release (chat, security, blocking) — extra one-time steps
+
+1. `npm install` in **both** repos (new: socket.io, helmet, express-rate-limit; frontend: three, @react-three/fiber, @react-three/drei, socket.io-client).
+2. Server `.env`: add `TRUST_PROXY=1` (nginx -> Node, Cloudflare in front). Optionally `REPORTS_EMAIL=you@...`.
+3. Run the migration once: `npm run migrate:pair-keys` (fills `pairKey` on old connection requests; safe to re-run).
+4. nginx: add the WebSocket block for chat **above** `location /api/`, then `sudo nginx -t && sudo systemctl reload nginx`:
+   ```nginx
+   location /api/socket.io/ {
+       proxy_pass http://localhost:7777/socket.io/;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+       proxy_read_timeout 3600s;
+   }
+   ```
+   Without it chat works locally but not on the live site.
+5. Recommended: allow ports 80/443 on the EC2 security group **only from [Cloudflare's IP ranges](https://www.cloudflare.com/ips/)**, so nobody can bypass Cloudflare and fake their IP to dodge rate limits.
+
+`scripts/deploy-server.sh` does steps 1–3 plus the usual pull / build / restart for both repos (run it on the server).
 
 ### Smoke test after deploying
 
