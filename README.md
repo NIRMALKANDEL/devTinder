@@ -210,7 +210,12 @@ Then deploy the frontend — see the [frontend README](https://github.com/NIRMAL
 ### This release (chat, security, blocking) — extra one-time steps
 
 1. `npm install` in **both** repos (new: socket.io, helmet, express-rate-limit; frontend: three, @react-three/fiber, @react-three/drei, socket.io-client).
-2. Server `.env`: add `TRUST_PROXY=1` (nginx -> Node, Cloudflare in front). Optionally `REPORTS_EMAIL=you@...`.
+2. Server `.env`: add `TRUST_PROXY` and optionally `REPORTS_EMAIL=you@...`. First check the real nginx config:
+   `grep -rn "X-Forwarded-For" /etc/nginx/sites-enabled/`
+   - no match (nginx passes Cloudflare's header through, like the example config) → `TRUST_PROXY=1`
+   - `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` → `TRUST_PROXY=2`
+
+   Check it worked: after a few logins, rate-limit buckets must be per visitor (one person hitting the limit must not lock out everyone).
 3. Run the migration once: `npm run migrate:pair-keys` (fills `pairKey` on old connection requests; safe to re-run).
 4. nginx: add the WebSocket block for chat **above** `location /api/`, then `sudo nginx -t && sudo systemctl reload nginx`:
    ```nginx

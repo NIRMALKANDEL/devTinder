@@ -29,7 +29,7 @@ echo "== Backend =="
 cd "$BACKEND_DIR"
 require_clean
 git pull --ff-only origin main
-npm install --omit=dev
+npm ci --omit=dev   # exact lockfile versions; never rewrites package-lock.json
 npm run migrate:pair-keys
 pm2 restart "$PM2_APP" --update-env
 sleep 4
@@ -45,7 +45,7 @@ echo "== Frontend =="
 cd "$FRONTEND_DIR"
 require_clean
 git pull --ff-only origin main
-npm install
+npm ci
 npm run build
 mkdir -p "$HOME/html-backup-$STAMP"
 sudo cp -r "$WEB_ROOT"/. "$HOME/html-backup-$STAMP"/
