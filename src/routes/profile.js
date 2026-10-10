@@ -5,6 +5,11 @@ const validator = require("validator");
 const profileRouter = express.Router();
 const { userAuth } = require("../middlewares/auth");
 const { validateEditProfileData } = require("../utils/validation");
+const { setAuthCookie, clearAuthCookie } = require("../utils/authCookie");
+const { User } = require("../models/user");
+const { connectionRequest } = require("../models/connectionRequest");
+const { Report } = require("../models/report");
+const { Chat, Message } = require("../models/chat");
 
 // ===============================
 // PROFILE VIEW API
@@ -16,7 +21,7 @@ profileRouter.get("/profile/view", userAuth, async (req, res) => {
       payload: req.user,
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ message: err.message });
   }
 });
 
@@ -59,7 +64,7 @@ profileRouter.patch("/profile/edit", userAuth, async (req, res) => {
       data: loggedInUser,
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ message: err.message });
   }
 });
 
@@ -73,20 +78,20 @@ profileRouter.put("/profile/password", userAuth, async (req, res) => {
 
     if (!oldPassword || !newPassword) {
       return res.status(400).json({
-        error: "Old password and new password are required",
+        message: "Old password and new password are required",
       });
     }
 
     // ✅ Verify old password
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({ error: "Old password is incorrect" });
+      return res.status(400).json({ message: "Old password is incorrect" });
     }
 
     // ✅ Strong password validation
     if (!validator.isStrongPassword(newPassword)) {
       return res.status(400).json({
-        error:
+        message:
           "Password must be at least 8 characters long and include 1 uppercase letter, 1 number, and 1 special character",
       });
     }
@@ -94,15 +99,52 @@ profileRouter.put("/profile/password", userAuth, async (req, res) => {
     // ✅ Hash and save new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
+    // Added: log out other sessions, then give this browser a fresh token
+    user.passwordChangedAt = new Date();
 
     await user.save();
+    setAuthCookie(req, res, await user.getJWT());
 
     res.status(200).json({
       success: true,
       message: "Password updated successfully",
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// ===============================
+// DELETE ACCOUNT API (Added)
+// ===============================
+// Needs the password again. Removes the user and everything tied to them:
+// requests, chats and messages, reports they filed, and their place in other
+// users' block lists. Reports filed against them are kept for moderation.
+profileRouter.delete("/profile", userAuth, async (req, res) => {
+  try {
+    const { password } = req.body || {};
+    const user = req.user;
+    if (!password || !(await user.validatePassword(password))) {
+      return res.status(400).json({ message: "Password is incorrect" });
+    }
+
+    const chats = await Chat.find({ participants: user._id }).select("_id");
+    const chatIds = chats.map((c) => c._id);
+    await Promise.all([
+      connectionRequest.deleteMany({
+        $or: [{ fromUserId: user._id }, { toUserId: user._id }],
+      }),
+      Message.deleteMany({ chatId: { $in: chatIds } }),
+      Chat.deleteMany({ _id: { $in: chatIds } }),
+      Report.deleteMany({ reporterId: user._id }),
+      User.updateMany({ blockedUsers: user._id }, { $pull: { blockedUsers: user._id } }),
+    ]);
+    await User.deleteOne({ _id: user._id });
+
+    clearAuthCookie(req, res);
+    res.json({ message: "Your account has been deleted." });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 

@@ -38,6 +38,11 @@ const createSendEmailCommand = (toAddress, fromAddress, subject, htmlBody, textB
 // can decide whether to retry. Prefer the queued helpers below.
 // If EMAIL_DEMO_RECIPIENT is set, every email goes there instead of the real user.
 const run = async ({ toAddress, subject, htmlBody, textBody }) => {
+  // Added: local/test runs log instead of sending (see scripts/dev-memory.js)
+  if (process.env.EMAIL_DRY_RUN === "true") {
+    console.log(`[email:dry-run] to ${toAddress}: ${subject}`);
+    return { MessageId: "dry-run" };
+  }
   const sendEmailCommand = createSendEmailCommand(
     process.env.EMAIL_DEMO_RECIPIENT || toAddress,
     process.env.SES_FROM_EMAIL,
@@ -101,6 +106,15 @@ const sendWelcomeEmail = (user, verifyUrl) =>
 const sendPasswordResetEmail = (user, resetUrl) =>
   queueTemplate(user.emailId, "passwordReset", { user, resetUrl }, `passwordReset:${user._id}`, RESEND_COOLDOWN_MS);
 
+// Added: tell the admin about a user report
+const sendUserReportedEmail = (adminEmail, data) =>
+  queueTemplate(
+    adminEmail,
+    "userReported",
+    data,
+    `report:${data.reporter._id}:${data.reported._id}`
+  );
+
 // Bulk: queue one digest per user. `digests` is [{ toUser, senderNames }].
 // dayKey makes re-running the job on the same day a no-op.
 const sendPendingRequestsDigests = (digests, dayKey) =>
@@ -135,4 +149,5 @@ module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPendingRequestsDigests,
+  sendUserReportedEmail,
 };

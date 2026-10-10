@@ -4,6 +4,8 @@ const { userAuth } = require("../middlewares/auth");
 const { connectionRequest } = require("../models/connectionRequest");
 const { User } = require("../models/user");
 const sendEmail = require("../utils/sendEmail");
+const { isBlockedBetween } = require("../utils/relations");
+const mongoose = require("mongoose");
 
 // Send Connection Request
 requestRouter.post(
@@ -23,8 +25,12 @@ requestRouter.post(
       }
 
       // Ensure recipient user exists
+      if (!mongoose.isValidObjectId(toUserId)) {
+        return res.status(400).json({ message: "Invalid user" });
+      }
       const toUser = await User.findById(toUserId);
-      if (!toUser) {
+      // Added: a blocked user looks the same as a missing one
+      if (!toUser || (await isBlockedBetween(fromUserId, toUserId))) {
         return res.status(404).json({ message: "User not found" });
       }
 
@@ -50,7 +56,18 @@ requestRouter.post(
         status,
       });
 
-      const savedRequest = await newRequest.save();
+      let savedRequest;
+      try {
+        savedRequest = await newRequest.save();
+      } catch (saveErr) {
+        // Added: the unique index caught a duplicate (e.g. a double click)
+        if (saveErr.code === 11000) {
+          return res
+            .status(400)
+            .json({ message: "Connection request already exists" });
+        }
+        throw saveErr;
+      }
 
       // Notify the recipient in the background; never fails the request
       if (status === "interested") {
@@ -63,7 +80,7 @@ requestRouter.post(
       });
     } catch (err) {
       console.error("Error in sending request:", err);
-      res.status(500).json({ error: "Internal Server Error" });
+      res.status(500).json({ message: "Internal Server Error" });
     }
   }
 );
@@ -111,7 +128,7 @@ requestRouter.post(
       });
     } catch (err) {
       console.error("Error in reviewing request:", err);
-      res.status(500).json({ error: "Internal Server Error" });
+      res.status(500).json({ message: "Internal Server Error" });
     }
   }
 );

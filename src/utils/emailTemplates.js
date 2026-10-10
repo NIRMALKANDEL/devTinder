@@ -50,6 +50,16 @@ const templates = {
     htmlBody: `<h1>Hi ${escapeHtml(toUser.firstName)},</h1><p>${escapeHtml(fullName(acceptedBy))} accepted your connection request. You're now connected on DevTinder!</p>`,
   }),
 
+  // Added: admin notification when a user is reported
+  userReported: ({ reporter, reported, reason, details }) => ({
+    subject: oneLine(`DevTinder report: ${fullName(reported)} (${reason})`),
+    htmlBody: `<h1>New user report</h1>
+<p><strong>Reported:</strong> ${escapeHtml(fullName(reported))} (${escapeHtml(String(reported._id))})</p>
+<p><strong>By:</strong> ${escapeHtml(fullName(reporter))} (${escapeHtml(String(reporter._id))})</p>
+<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>
+<p><strong>Details:</strong> ${escapeHtml(details || "-")}</p>`,
+  }),
+
   // Daily digest of requests still waiting for a reply
   pendingRequestsDigest: ({ toUser, senderNames }) => ({
     subject: "Pending Connection Requests on DevTinder",

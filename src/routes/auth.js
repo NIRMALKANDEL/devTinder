@@ -8,6 +8,13 @@ const { User } = require("../models/user");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
+const { setAuthCookie, clearAuthCookie } = require("../utils/authCookie");
+const {
+  loginIpLimiter,
+  loginAccountLimiter,
+  signupLimiter,
+  forgotPasswordLimiter,
+} = require("../middlewares/rateLimit");
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
@@ -22,7 +29,7 @@ const hashToken = (token) =>
 const verifyUrlFor = (token) => `${FRONTEND_URL}/api/verify-email/${token}`;
 
 // Signup API - Create a new user
-authRouter.post("/signup", async (req, res) => {
+authRouter.post("/signup", signupLimiter, async (req, res) => {
   try {
     validateSignUpData(req);
 
@@ -59,7 +66,7 @@ authRouter.post("/signup", async (req, res) => {
         .map((e) => e.message)
         .join(" ");
     }
-    res.status(400).send(`ERROR:= ${message}`);
+    res.status(400).json({ message });
   }
 });
 
@@ -79,10 +86,7 @@ authRouter.get("/verify-email/:token", async (req, res) => {
     }
 
     const token = await user.getJWT();
-    res.cookie("token", token, {
-      expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      httpOnly: true,
-    });
+    setAuthCookie(req, res, token);
     res.redirect(`${FRONTEND_URL}/profile`);
   } catch (err) {
     res.redirect(`${FRONTEND_URL}/login?verified=false`);
@@ -90,7 +94,7 @@ authRouter.get("/verify-email/:token", async (req, res) => {
 });
 
 // Added: forgot password - emails a reset link
-authRouter.post("/forgot-password", async (req, res) => {
+authRouter.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   try {
     const emailId = String(req.body.emailId || "").toLowerCase().trim();
     const user = await User.findOne({ emailId });
@@ -147,8 +151,13 @@ authRouter.post("/reset-password/:token", async (req, res) => {
     await User.updateOne(
       { _id: user._id },
       {
-        // Opening the reset link also proves they own the email
-        $set: { password: passwordHash, isEmailVerified: true },
+        // Opening the reset link also proves they own the email.
+        // passwordChangedAt logs out every existing session.
+        $set: {
+          password: passwordHash,
+          isEmailVerified: true,
+          passwordChangedAt: new Date(),
+        },
         $unset: {
           passwordResetToken: 1,
           passwordResetExpires: 1,
@@ -164,7 +173,7 @@ authRouter.post("/reset-password/:token", async (req, res) => {
 });
 
 // Login API
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", loginIpLimiter, loginAccountLimiter, async (req, res) => {
   try {
     const { emailId, password } = req.body;
 
@@ -201,25 +210,20 @@ authRouter.post("/login", async (req, res) => {
       const token = await user.getJWT();
       // console.log(token);
 
-      // Changed: cookie now lasts 1 day to match the JWT so refresh keeps the user logged in
-      res.cookie("token", token, {
-        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        httpOnly: true,
-      });
+      // Cookie lasts 1 day to match the JWT; secure + sameSite set in authCookie.js
+      setAuthCookie(req, res, token);
       res.json({ payload: user });
     } else {
       throw new Error("Invalid credentials");
     }
   } catch (err) {
-    res.status(400).send(`Error  ${err.message}`);
+    res.status(400).json({ message: err.message });
   }
 });
 
 // logout API
 authRouter.post("/logout", async (req, res) => {
-  res.cookie("token", null, {
-    expires: new Date(0),
-  });
-  res.send("Logout Sucessfull ");
+  clearAuthCookie(req, res);
+  res.json({ message: "Logged out" });
 });
 module.exports = authRouter;

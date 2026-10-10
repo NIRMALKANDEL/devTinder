@@ -112,6 +112,14 @@ const userSchema = new mongoose.Schema(
     // Added: forgot / reset password
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
+    // Added: users this user has blocked (hidden from feed, requests and chat both ways)
+    blockedUsers: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+      index: true,
+    },
+    // Added: sessions (JWTs) issued before this date are rejected
+    passwordChangedAt: { type: Date, select: false },
   },
   {
     timestamps: true,
@@ -124,6 +132,7 @@ const userSchema = new mongoose.Schema(
         delete ret.emailVerificationToken;
         delete ret.passwordResetToken;
         delete ret.passwordResetExpires;
+        delete ret.passwordChangedAt;
         delete ret.__v;
         return ret;
       },
