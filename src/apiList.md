@@ -27,3 +27,20 @@ userRouter
 - GET /
 
   Status: ignore, interested, accepeted, rejected
+
+premiumRouter
+
+- GET /premium/plan
+- GET /premium/status
+- GET /premium/recommendations (Premium only)
+
+paymentRouter
+
+- POST /payment/create-order
+- POST /payment/verify
+- GET /payment/status/:orderId
+- POST /payment/webhook (Razorpay, raw body)
+
+callRouter
+
+- GET /call/ice-servers

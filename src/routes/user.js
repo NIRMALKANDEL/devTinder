@@ -88,9 +88,11 @@ userRouter.get("/feed", userAuth, async (req, res) => {
       hideUserFromFeed.add(req.toUserId.toString());
     });
 
+    // Changed: ObjectIds, because the query below is an aggregation (no auto-casting)
+    const toObjectIds = (ids) => ids.filter(isId).map((id) => new mongoose.Types.ObjectId(id));
     const filter = {
       $and: [
-        { _id: { $nin: Array.from(hideUserFromFeed) } },
+        { _id: { $nin: toObjectIds(Array.from(hideUserFromFeed)) } },
         { _id: { $ne: loggedInUser._id } },
       ],
     };
@@ -101,11 +103,17 @@ userRouter.get("/feed", userAuth, async (req, res) => {
       .slice(0, 5);
     if (skills.length) filter.$and.push({ skills: { $in: skills } });
 
-    const users = await User.find(filter)
-      .collation({ locale: "en", strength: 2 }) // case-insensitive skill match
-      .select(USER_SAFE_DATA)
-      .skip(skip)
-      .limit(limit);
+    // Changed: Premium members' profiles are shown first (the Premium visibility
+    // benefit); everyone else keeps the previous order
+    const projection = Object.fromEntries(USER_SAFE_DATA.split(" ").map((f) => [f, 1]));
+    const users = await User.aggregate([
+      { $match: filter },
+      { $addFields: { _boost: { $cond: [{ $gt: ["$premiumExpiresAt", new Date()] }, 1, 0] } } },
+      { $sort: { _boost: -1, _id: 1 } },
+      { $skip: skip },
+      { $limit: limit },
+      { $project: projection },
+    ]).collation({ locale: "en", strength: 2 }); // case-insensitive skill match
 
     res.json({ data: users });
   } catch (err) {
@@ -213,3 +221,4 @@ userRouter.post("/user/report/:userId", userAuth, async (req, res) => {
 });
 
 module.exports = userRouter;
+module.exports.USER_SAFE_DATA = USER_SAFE_DATA;

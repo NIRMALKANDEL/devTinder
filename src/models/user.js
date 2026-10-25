@@ -120,6 +120,10 @@ const userSchema = new mongoose.Schema(
     },
     // Added: sessions (JWTs) issued before this date are rejected
     passwordChangedAt: { type: Date, select: false },
+    // Added: Premium is active while this date is in the future. Only set by the
+    // server after a verified payment (utils/premium.js grantPremium), never by
+    // /profile/edit.
+    premiumExpiresAt: { type: Date, default: null },
   },
   {
     timestamps: true,
@@ -134,6 +138,12 @@ const userSchema = new mongoose.Schema(
         delete ret.passwordResetExpires;
         delete ret.passwordChangedAt;
         delete ret.__v;
+        // Added: lets the frontend show Premium state (only when the date was loaded)
+        if (ret.premiumExpiresAt !== undefined) {
+          ret.isPremium = Boolean(
+            ret.premiumExpiresAt && new Date(ret.premiumExpiresAt).getTime() > Date.now()
+          );
+        }
         return ret;
       },
     },

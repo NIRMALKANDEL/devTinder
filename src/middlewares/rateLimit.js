@@ -52,7 +52,25 @@ const forgotPasswordLimiter = limiter(
 // Generous ceiling for the whole API (stops scripted floods, not normal use)
 const apiLimiter = limiter(MINUTE, 300, "Too many requests. Please slow down.");
 
+// Added: payment endpoints, per logged-in user (use after userAuth)
+const byUser = (req) => (req.user ? `user:${req.user._id}` : ipKeyGenerator(req.ip));
+const paymentLimiter = limiter(
+  15 * MINUTE,
+  20,
+  "Too many payment attempts. Please wait a few minutes and try again.",
+  { keyGenerator: byUser }
+);
+// Status checks are polled while a payment is pending, so allow more of them
+const paymentStatusLimiter = limiter(
+  15 * MINUTE,
+  120,
+  "Too many payment status checks. Please wait a moment.",
+  { keyGenerator: byUser }
+);
+
 module.exports = {
+  paymentLimiter,
+  paymentStatusLimiter,
   loginIpLimiter,
   loginAccountLimiter,
   signupLimiter,

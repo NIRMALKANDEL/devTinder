@@ -9,6 +9,7 @@ const { User } = require("./models/user");
 const { Message } = require("./models/chat");
 const { canChat } = require("./utils/relations");
 const { getOrCreateChat } = require("./routes/chat");
+const { createCallService } = require("./calls");
 
 const parseCookies = (header = "") =>
   Object.fromEntries(
@@ -55,15 +56,18 @@ const initSocket = (server) => {
       origin: (process.env.CORS_ORIGINS || "http://localhost:5173").split(","),
       credentials: true,
     },
-    maxHttpBufferSize: 16 * 1024, // messages are small text
+    // Changed: 64 KB (was 16 KB) so WebRTC call offers fit; chat text is still capped at 2000 chars
+    maxHttpBufferSize: 64 * 1024,
   });
 
   io.use(authenticate);
+  const callService = createCallService(io); // Added: audio/video call signaling
 
   io.on("connection", (socket) => {
     const userId = socket.data.userId;
     // Each user listens on a personal room, so every open tab gets new messages
     socket.join(`user:${userId}`);
+    callService.attach(socket);
 
     socket.on("sendMessage", async ({ toUserId, text } = {}, ack = () => {}) => {
       try {

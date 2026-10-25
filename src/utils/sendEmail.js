@@ -115,6 +115,22 @@ const sendUserReportedEmail = (adminEmail, data) =>
     `report:${data.reporter._id}:${data.reported._id}`
   );
 
+// Added: confirmation after Premium is activated (once per order)
+const sendPremiumActivatedEmail = (user, payment) =>
+  queueTemplate(
+    user.emailId,
+    "premiumActivated",
+    {
+      user,
+      amount: payment.amount,
+      currency: payment.currency,
+      orderId: payment.orderId,
+      paymentId: payment.paymentId,
+      expiresAt: payment.premiumExpiresAt,
+    },
+    `premium:${payment.orderId}`
+  );
+
 // Bulk: queue one digest per user. `digests` is [{ toUser, senderNames }].
 // dayKey makes re-running the job on the same day a no-op.
 const sendPendingRequestsDigests = (digests, dayKey) =>
@@ -150,4 +166,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendPendingRequestsDigests,
   sendUserReportedEmail,
+  sendPremiumActivatedEmail,
 };

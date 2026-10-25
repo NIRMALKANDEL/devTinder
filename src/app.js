@@ -17,6 +17,13 @@ const trustProxy = process.env.TRUST_PROXY ?? "1";
 app.set("trust proxy", /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
 
 app.use(helmet()); // Added: standard security headers
+// Added: Razorpay webhook needs the raw body for its signature, so it is registered
+// before express.json (and before the general rate limit; it is signature-checked)
+app.post(
+  "/payment/webhook",
+  express.raw({ type: "application/json", limit: "256kb" }),
+  require("./routes/payment").webhookHandler
+);
 app.use(express.json({ limit: "1mb" })); // Changed: room for an uploaded profile photo
 app.use(cookieParser());
 app.use(
@@ -40,12 +47,18 @@ const profileRouter = require("./routes/profile");
 const requestRouter = require("./routes/request");
 const userRouter = require("./routes/user");
 const chatRouter = require("./routes/chat");
+const paymentRouter = require("./routes/payment");
+const premiumRouter = require("./routes/premium");
+const callRouter = require("./routes/call");
 
 app.use("/", authRouter);
 app.use("/", profileRouter);
 app.use("/", requestRouter);
 app.use("/", userRouter);
 app.use("/", chatRouter);
+app.use("/", paymentRouter); // Added: Razorpay checkout
+app.use("/", premiumRouter); // Added: Premium plan, status, recommendations
+app.use("/", callRouter); // Added: STUN/TURN for calls
 
 app.use((req, res) => res.status(404).json({ message: "Not found" }));
 

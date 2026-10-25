@@ -74,8 +74,18 @@ src/
 | GET | `/chats` | ✔ | Your conversations, newest first |
 | GET | `/chat/:userId` | ✔ | Messages with a connection (`?before=<messageId>` for older) |
 | GET | `/health` | – | `{ status: "ok" }` when the API and database are up (for uptime monitors) |
+| GET | `/premium/plan` | – | Premium price/duration from `.env`, and whether checkout is on |
+| GET | `/premium/status` | ✔ | Your Premium state and last 5 payments |
+| GET | `/premium/recommendations` | ✔ Premium | Up to 5 daily picks by shared skills (403 `PREMIUM_REQUIRED` otherwise) |
+| POST | `/payment/create-order` | ✔ | Creates (or reuses, for 15 min) a Razorpay order for the server-side price |
+| POST | `/payment/verify` | ✔ | Checkout result (`razorpay_order_id, razorpay_payment_id, razorpay_signature`): checks the signature, then asks Razorpay; 200 active, 202 pending, 402 failed |
+| GET | `/payment/status/:orderId` | ✔ | Order status; reconciles with Razorpay if not settled yet |
+| POST | `/payment/webhook` | signature | Razorpay webhook (`payment.captured`, `payment.authorized`, `payment.failed`, `order.paid`), raw-body HMAC check, duplicate events ignored |
+| GET | `/call/ice-servers` | ✔ | STUN/TURN servers for calls, with short-lived TURN credentials |
 
 **Socket.IO** (path `/socket.io`, through nginx at `/api/socket.io`, authenticated by the login cookie): emit `sendMessage {toUserId, text}` (with ack), `typing {toUserId}`; listen for `messageReceived`, `typing`.
+
+**Calls (Socket.IO signaling, `src/calls.js`)**: emit `call:start {toUserId, kind: "audio"|"video"}` (ack `{ok, callId}` or `{ok:false, reason}`: `not_allowed`, `premium_required`, `offline`, `busy`, `already_in_call`, `rate_limited`), `call:accept {callId}` (ack), `call:reject {callId, reason}`, `call:end {callId}`, `call:signal {callId, data}` (offer/answer/candidate), `call:resume {callId}` (ack, after a reconnect). Listen for `call:incoming`, `call:accepted`, `call:signal`, `call:ended {reason}`, `call:handled-elsewhere`, `call:peer-reconnecting`, `call:peer-reconnected`. Only accepted, unblocked connections can call; audio is free, starting video needs Premium. Call state is in memory (fine for one pm2 instance).
 
 All errors are JSON: `{ "message": "..." }`. Auth failures are `401`.
 
@@ -168,6 +178,26 @@ SES is called with an **IAM user's access keys** (IAM is global — the same use
 2. Attach a policy that allows sending email, e.g. `AmazonSESFullAccess`, or a minimal custom policy with `ses:SendEmail` / `ses:SendRawEmail`.
 3. *Security credentials* → *Create access key* → put them in `.env` as `AWS_SES_ACCESS_KEY_ID` / `AWS_SES_SECRET_ACCESS_KEY`.
 4. Never commit the keys; rotate them if they ever leak.
+
+## Premium and Razorpay
+
+- Price and duration: `PREMIUM_PRICE_PAISE` (10000 = ₹100) and `PREMIUM_DURATION_DAYS` (30). Leave the price empty to keep checkout off.
+- Keys: `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` from Razorpay Dashboard → Account & Settings → API Keys. Use `rzp_test_...` keys until the account is approved and live keys are generated. The secret never leaves the server.
+- Webhook: Dashboard → Webhooks → Add: URL `https://www.projectdev.in/api/payment/webhook`, a secret of your choice (put the same value in `RAZORPAY_WEBHOOK_SECRET`), events `payment.captured`, `payment.failed`, `payment.authorized`, `order.paid`. Test mode and live mode have separate webhooks.
+- Turn on automatic capture (Dashboard → Account & Settings → Payment capture), so payments go from authorized to captured without manual action.
+- Premium is granted only after a verified, captured payment whose order id, amount and currency match our record (`utils/premium.js` `grantPremium`, once per order; buying again extends the end date).
+- Refund: issue it in the Razorpay dashboard, then remove Premium by hand: in MongoDB set `premiumExpiresAt` to `null` on that user (or to the end date before the refunded payment).
+- Payments are stored in the `payments` collection, processed webhook ids in `webhookevents` (kept 90 days).
+
+## Calls (WebRTC)
+
+- Signaling runs over the existing Socket.IO connection; audio/video go peer to peer. Calls need HTTPS (already the case behind Cloudflare).
+- STUN alone fails on many mobile/office networks, so set up TURN before launch:
+  - **Own coturn** (e.g. a small separate server near India): `use-auth-secret`, `static-auth-secret=<TURN_SECRET>`, `realm=projectdev.in`, listen on 3478 (UDP+TCP) and 5349 (TLS), open the relay port range (e.g. 49152–65535/UDP) in the security group. Put the hostnames in `TURN_URLS` and the secret in `TURN_SECRET`. Credentials given to browsers expire after `TURN_TTL_SECONDS`.
+  - **Hosted TURN** (Twilio, Metered, Cloudflare Calls, etc.): put its URLs in `TURN_URLS` and fixed credentials in `TURN_USERNAME` / `TURN_CREDENTIAL`.
+- Do not point a TURN hostname at Cloudflare's proxy (orange cloud): TURN is not HTTP; use a DNS-only record.
+- `CALL_FORCE_RELAY=true` sends all media through TURN, which hides users' IP addresses from each other (costs more TURN bandwidth).
+- Nothing is recorded and no call history is stored.
 
 ## Deployment (AWS EC2 + pm2 + nginx)
 

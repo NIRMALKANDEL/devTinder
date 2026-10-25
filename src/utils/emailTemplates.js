@@ -50,6 +50,20 @@ const templates = {
     htmlBody: `<h1>Hi ${escapeHtml(toUser.firstName)},</h1><p>${escapeHtml(fullName(acceptedBy))} accepted your connection request. You're now connected on DevTinder!</p>`,
   }),
 
+  // Added: receipt-style confirmation after a verified Premium payment
+  premiumActivated: ({ user, amount, currency, orderId, paymentId, expiresAt }) => ({
+    subject: "Your DevTinder Premium is active",
+    htmlBody: `<h1>Hi ${escapeHtml(user.firstName)}, Premium is active!</h1>
+<p>Thanks for your payment. Your DevTinder Premium is active until <strong>${escapeHtml(
+      new Date(expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })
+    )}</strong>.</p>
+<p><strong>Amount:</strong> ${escapeHtml(currency)} ${escapeHtml((amount / 100).toFixed(2))}<br>
+<strong>Order ID:</strong> ${escapeHtml(orderId)}<br>
+<strong>Payment ID:</strong> ${escapeHtml(paymentId || "-")}</p>
+<p>This is a one-time purchase and will not renew automatically. Keep this email for your records; quote the IDs above if you contact support.</p>
+<p>The DevTinder Team</p>`,
+  }),
+
   // Added: admin notification when a user is reported
   userReported: ({ reporter, reported, reason, details }) => ({
     subject: oneLine(`DevTinder report: ${fullName(reported)} (${reason})`),
