@@ -356,6 +356,21 @@ describe("calls", () => {
     sb.close();
   });
 
+  test("a call that couldn't connect ends with reason failed for both sides", async () => {
+    const { b, sa, sb } = await pair();
+    const incoming = next(sb, "call:incoming");
+    const start = await sa.emitWithAck("call:start", { toUserId: String(b._id), kind: "audio" });
+    const inc = await incoming;
+    expect((await sb.emitWithAck("call:accept", { callId: inc.callId })).ok).toBe(true);
+    const endedA = next(sa, "call:ended");
+    const endedB = next(sb, "call:ended");
+    sa.emit("call:end", { callId: start.callId, reason: "failed" });
+    expect((await endedA).reason).toBe("failed");
+    expect((await endedB).reason).toBe("failed");
+    sa.close();
+    sb.close();
+  });
+
   test("video needs Premium for the caller only", async () => {
     let { b, sa, sb } = await pair();
     const free = await sa.emitWithAck("call:start", { toUserId: String(b._id), kind: "video" });

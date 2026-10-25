@@ -176,11 +176,14 @@ const createCallService = (io) => {
       endCall(call, REJECT_REASONS.includes(reason) ? reason : "rejected");
     });
 
-    // Caller cancelling while it rings, or either side hanging up
-    socket.on("call:end", ({ callId } = {}) => {
+    // Caller cancelling while it rings, or either side hanging up.
+    // reason "failed": the browser gave up because audio/video couldn't connect
+    // (network), so both people see that instead of "… ended the call".
+    socket.on("call:end", ({ callId, reason } = {}) => {
       const call = getCall(callId);
       if (!call || socketOf(call, userId) !== socket.id) return;
-      endCall(call, call.state === "ringing" ? "cancelled" : "ended");
+      if (call.state === "ringing") return endCall(call, "cancelled");
+      endCall(call, reason === "failed" ? "failed" : "ended");
     });
 
     socket.on("call:signal", ({ callId, data } = {}) => {
