@@ -1,6 +1,6 @@
 const { SendEmailCommand } = require("@aws-sdk/client-ses");
-const { sesClient } = require("./sesClient");
 const { createEmailQueue } = require("./emailQueue");
+const { sendWithBrevo } = require("./brevoClient");
 const { render, fullName } = require("./emailTemplates");
 
 const createSendEmailCommand = (toAddress, fromAddress, subject, htmlBody, textBody) => {
@@ -34,23 +34,31 @@ const createSendEmailCommand = (toAddress, fromAddress, subject, htmlBody, textB
   });
 };
 
-// Sends one email via AWS SES right now. Throws on any SES error so the queue
+// Sends one email right now: through Brevo when BREVO_API_KEY is set,
+// otherwise through AWS SES. Throws on any provider error so the queue
 // can decide whether to retry. Prefer the queued helpers below.
 // If EMAIL_DEMO_RECIPIENT is set, every email goes there instead of the real user.
+// Sender address: EMAIL_FROM, falling back to SES_FROM_EMAIL.
 const run = async ({ toAddress, subject, htmlBody, textBody }) => {
   // Added: local/test runs log instead of sending (see scripts/dev-memory.js)
   if (process.env.EMAIL_DRY_RUN === "true") {
     console.log(`[email:dry-run] to ${toAddress}: ${subject}`);
     return { MessageId: "dry-run" };
   }
-  const sendEmailCommand = createSendEmailCommand(
-    process.env.EMAIL_DEMO_RECIPIENT || toAddress,
-    process.env.SES_FROM_EMAIL,
+  const message = {
+    toAddress: process.env.EMAIL_DEMO_RECIPIENT || toAddress,
+    fromAddress: process.env.EMAIL_FROM || process.env.SES_FROM_EMAIL,
     subject,
     htmlBody,
-    textBody || htmlBody.replace(/<[^>]*>/g, "")
+    textBody: textBody || htmlBody.replace(/<[^>]*>/g, ""),
+  };
+  if (process.env.BREVO_API_KEY) return sendWithBrevo(message);
+
+  // SES fallback; the SES client is only created when it is actually used
+  const { sesClient } = require("./sesClient");
+  return sesClient.send(
+    createSendEmailCommand(message.toAddress, message.fromAddress, subject, htmlBody, message.textBody)
   );
-  return sesClient.send(sendEmailCommand);
 };
 
 const envInt = (name, fallback) => {
