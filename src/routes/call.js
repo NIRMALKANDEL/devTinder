@@ -49,9 +49,49 @@ const iceConfigFor = (userId) => {
   };
 };
 
-callRouter.get("/call/ice-servers", userAuth, (req, res) => {
+// Added: Cloudflare Realtime TURN (free tier: 1,000 GB a month).
+// CF_TURN_KEY_ID + CF_TURN_API_TOKEN come from Cloudflare dashboard > Realtime > TURN Server.
+// Cloudflare hands out short-lived TURN credentials; the API token never leaves the server.
+const cloudflareTurn = async (ttl) => {
+  const keyId = process.env.CF_TURN_KEY_ID;
+  const token = process.env.CF_TURN_API_TOKEN;
+  if (!keyId || !token) return null;
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ttl }),
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    const servers = Array.isArray(body.iceServers) ? body.iceServers : [body.iceServers];
+    // Port 53 is blocked by most browsers; drop those URLs
+    return servers
+      .filter(Boolean)
+      .map((s) => ({ ...s, urls: [].concat(s.urls).filter((u) => !/:53(\?|$)/.test(u)) }))
+      .filter((s) => s.urls.length);
+  } catch (err) {
+    console.error("[call] Cloudflare TURN credentials failed:", err.message);
+    return null;
+  }
+};
+
+callRouter.get("/call/ice-servers", userAuth, async (req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ data: iceConfigFor(String(req.user._id)) });
+  const config = iceConfigFor(String(req.user._id));
+  if (!config.turnConfigured) {
+    const cf = await cloudflareTurn(config.ttl);
+    if (cf?.length) {
+      config.iceServers = [...config.iceServers, ...cf];
+      config.turnConfigured = true;
+      if (process.env.CALL_FORCE_RELAY === "true") config.iceTransportPolicy = "relay";
+    }
+  }
+  res.json({ data: config });
 });
 
 module.exports = callRouter;

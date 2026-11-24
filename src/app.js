@@ -90,6 +90,7 @@ const start = async () => {
   const PORT = process.env.PORT || 7777;
   server.listen(PORT, () => {
     console.log(`Server is successfully listening on port ${PORT}...`);
+    require("./utils/keepAlive").startKeepAlive(); // Added: stop Render's free plan from sleeping
   });
 
   // On shutdown (deploys, restarts) send any queued emails before exiting
