@@ -9,6 +9,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
 const { setAuthCookie, clearAuthCookie } = require("../utils/authCookie");
+const { OAuth2Client } = require("google-auth-library");
 const {
   loginIpLimiter,
   loginAccountLimiter,
@@ -218,6 +219,86 @@ authRouter.post("/login", loginIpLimiter, loginAccountLimiter, async (req, res) 
     }
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// Added: "Continue with Google" (sign up or log in with a Google account).
+// GOOGLE_CLIENT_ID is the OAuth web client ID from Google Cloud. It isn't a secret;
+// the frontend reads it from /auth/google/config and hides the button when it's unset.
+const googleClient = new OAuth2Client();
+
+authRouter.get("/auth/google/config", (req, res) => {
+  res.json({ clientId: process.env.GOOGLE_CLIENT_ID || null });
+});
+
+// Names must fit the User rules (first name 4-50 characters, last name empty or 2+)
+const namesFromGoogle = (p, emailId) => {
+  const given = String(p.given_name || "").trim();
+  const family = String(p.family_name || "").trim();
+  const full = String(p.name || `${given} ${family}`).trim();
+  const fits = (v) => v.length >= 4 && v.length <= 50;
+  if (fits(given)) return { firstName: given, lastName: family.length >= 2 ? family.slice(0, 50) : "" };
+  if (fits(full)) return { firstName: full, lastName: "" };
+  const local = emailId.split("@")[0].replace(/[^a-zA-Z0-9 ._-]/g, "").slice(0, 50);
+  return { firstName: fits(local) ? local : "Developer", lastName: "" };
+};
+
+authRouter.post("/auth/google", loginIpLimiter, async (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    return res.status(503).json({ message: "Google sign-in isn't set up yet." });
+  }
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: String(req.body?.credential || ""),
+      audience: clientId,
+    });
+    payload = ticket.getPayload();
+  } catch (err) {
+    return res.status(401).json({ message: "Google sign-in failed. Please try again." });
+  }
+  if (!payload?.email || payload.email_verified !== true) {
+    return res.status(400).json({ message: "Your Google account's email isn't verified." });
+  }
+
+  try {
+    const emailId = payload.email.toLowerCase().trim();
+    let user = await User.findOne({ emailId });
+    let isNew = false;
+
+    if (user) {
+      // Google has confirmed this email, so a pending email verification is done
+      if (user.isEmailVerified === false) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { isEmailVerified: true }, $unset: { emailVerificationToken: 1 } }
+        );
+        user.isEmailVerified = true;
+      }
+    } else {
+      // New account. It gets a random password nobody knows; the user can set
+      // one later with "Forgot password" if they also want email login.
+      const randomPassword = crypto.randomBytes(24).toString("base64") + "aA1!";
+      const { firstName, lastName } = namesFromGoogle(payload, emailId);
+      user = new User({
+        firstName,
+        lastName,
+        emailId,
+        password: await bcrypt.hash(randomPassword, 10),
+        isEmailVerified: true,
+        ...(payload.picture ? { photoURL: payload.picture } : {}),
+      });
+      await user.save();
+      isNew = true;
+    }
+
+    const token = await user.getJWT();
+    setAuthCookie(req, res, token);
+    res.status(isNew ? 201 : 200).json({ payload: user, isNew });
+  } catch (err) {
+    console.error("Google sign-in error:", err.message);
+    res.status(400).json({ message: "Couldn't sign you in with Google. Please try again." });
   }
 });
 

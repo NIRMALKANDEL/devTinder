@@ -5,7 +5,7 @@
 //
 // Rules:
 //  - only accepted connections who haven't blocked each other can call (same as chat)
-//  - audio: every logged-in user; video: the caller needs active Premium
+//  - audio and video: every logged-in user (video used to need Premium)
 //  - one call per user at a time (busy otherwise); 30 s ringing timeout
 //  - each call has a random id and is bound to the two users and, once answered, to
 //    the one browser tab on each side, so nobody else can inject or end it
@@ -15,7 +15,6 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const { User } = require("./models/user");
 const { canChat } = require("./utils/relations");
-const { isPremiumActive } = require("./utils/premium");
 
 const RING_MS = Number(process.env.CALL_RING_TIMEOUT_MS) || 30000;
 const RECONNECT_GRACE_MS = Number(process.env.CALL_RECONNECT_GRACE_MS) || 15000;
@@ -101,15 +100,8 @@ const createCallService = (io) => {
         if (!(await canChat(userId, calleeId))) {
           return ack({ ok: false, reason: "not_allowed", message: "You can only call your connections." });
         }
-        const caller = await User.findById(userId).select("firstName lastName photoURL premiumExpiresAt");
+        const caller = await User.findById(userId).select("firstName lastName photoURL");
         if (!caller) return ack({ ok: false, reason: "invalid", message: "Invalid call." });
-        if (kind === "video" && !isPremiumActive(caller)) {
-          return ack({
-            ok: false,
-            reason: "premium_required",
-            message: "Video calling is a Premium feature. Audio calls are free.",
-          });
-        }
         if (!isOnline(calleeId)) {
           return ack({ ok: false, reason: "offline", message: "They're offline right now. Try again later." });
         }
