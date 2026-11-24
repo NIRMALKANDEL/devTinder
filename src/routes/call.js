@@ -20,7 +20,9 @@ const list = (value) =>
 //  - TURN_USERNAME + TURN_CREDENTIAL: fixed credentials from a hosted TURN provider.
 const iceConfigFor = (userId) => {
   const stunUrls = list(process.env.STUN_URLS || "stun:stun.l.google.com:19302");
-  const turnUrls = list(process.env.TURN_URLS);
+  // Fixed: accept "host:port" too; browsers reject TURN URLs without the turn:/turns: scheme,
+  // which broke every call ("Couldn't start your camera") instead of just skipping TURN
+  const turnUrls = list(process.env.TURN_URLS).map((u) => (/^turns?:/i.test(u) ? u : `turn:${u}`));
   const ttl = Math.max(Number(process.env.TURN_TTL_SECONDS) || 3600, 300);
   const iceServers = stunUrls.length ? [{ urls: stunUrls }] : [];
   let turnConfigured = false;
